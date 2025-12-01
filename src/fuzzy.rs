@@ -138,11 +138,11 @@ fn create_preview_command(targets: &[Target]) -> Option<String> {
     // Otherwise, we need a more complex solution
     if let Some(first_target) = targets.first() {
         let file_path = first_target.file.display();
-        // Use sed/head/tail to show context around the target line
-        // This is a simple preview that shows lines around the target
+        // Use bat for syntax highlighting if available, otherwise fall back to sed
+        // The command finds the line number of the target, then displays context around it
         Some(format!(
-            "grep -n '{{}}:' {} | head -1 | cut -d: -f1 | xargs -I{{}} sh -c 'sed -n \"$(({{}} - 3 < 1 ? 1 : {{}} - 3)),$(({{}} + 10))p\" {}'",
-            file_path, file_path
+            r#"LINE=$(grep -n '{{}}:' {} | head -1 | cut -d: -f1); if [ -n "$LINE" ]; then START=$((LINE - 3 < 1 ? 1 : LINE - 3)); END=$((LINE + 10)); if command -v bat >/dev/null 2>&1; then bat --style=numbers,grid --color=always --line-range=$START:$END --highlight-line=$LINE -l Makefile {}; else sed -n "${{START}},${{END}}p" {}; fi; fi"#,
+            file_path, file_path, file_path
         ))
     } else {
         None
