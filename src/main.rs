@@ -1,3 +1,4 @@
+mod cache;
 mod cli;
 mod executor;
 mod fuzzy;
@@ -8,6 +9,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use colored::Colorize;
 
+use cache::Cache;
 use cli::{Cli, Commands};
 use executor::ExecuteOptions;
 use makefile::ParseOptions;
@@ -34,15 +36,8 @@ fn run() -> Result<()> {
         include_patterns: cli.patterns,
     };
 
-    // Get targets based on whether a specific file was provided
-    let targets = if let Some(ref makefile) = cli.file {
-        if !makefile.exists() {
-            anyhow::bail!("Makefile not found: {}", makefile.display());
-        }
-        makefile::parse_makefile(makefile, &parse_options)?
-    } else {
-        makefile::parse_all_makefiles(&working_dir, cli.recursive, &parse_options)?
-    };
+    // Get targets (with caching unless --no-cache is specified)
+    let targets = get_targets(&cli, &working_dir, &parse_options)?;
 
     if targets.is_empty() {
         println!("{}", "No targets found.".yellow());
@@ -61,7 +56,7 @@ fn run() -> Result<()> {
             handle_run(target, &cli)?;
         }
         None => {
-            // Default behavior: if --json or --no-ui, list targets; otherwise pick
+            // Default behavior: start interactive picker (unless --json or --no-ui)
             if cli.json || cli.no_ui {
                 handle_list(&targets, cli.json)?;
             } else {
@@ -71,6 +66,94 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Get targets with caching support
+fn get_targets(
+    cli: &Cli,
+    working_dir: &std::path::Path,
+    parse_options: &ParseOptions,
+) -> Result<Vec<target::Target>> {
+    // If a specific file is provided
+    if let Some(ref makefile) = cli.file {
+        if !makefile.exists() {
+            anyhow::bail!("Makefile not found: {}", makefile.display());
+        }
+        return get_targets_for_file(makefile, parse_options, cli.no_cache);
+    }
+
+    // Find all Makefiles
+    let makefiles = makefile::find_makefiles(working_dir, cli.recursive);
+    if makefiles.is_empty() {
+        anyhow::bail!("No Makefile found in {}", working_dir.display());
+    }
+
+    // Load cache
+    let mut cache = if cli.no_cache {
+        Cache::new()
+    } else {
+        Cache::load().unwrap_or_else(|_| Cache::new())
+    };
+
+    let mut all_targets = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+    let mut cache_modified = false;
+
+    for makefile_path in &makefiles {
+        let targets = if cli.no_cache {
+            // Skip cache, parse directly
+            makefile::parse_makefile(makefile_path, parse_options)?
+        } else if let Some(cached_targets) = cache.get(makefile_path) {
+            // Use cached targets
+            cached_targets.clone()
+        } else {
+            // Parse and cache
+            let parsed = makefile::parse_makefile(makefile_path, parse_options)?;
+            cache.set(makefile_path, parsed.clone())?;
+            cache_modified = true;
+            parsed
+        };
+
+        for target in targets {
+            if !seen_names.contains(&target.name) {
+                seen_names.insert(target.name.clone());
+                all_targets.push(target);
+            }
+        }
+    }
+
+    // Save cache if modified
+    if cache_modified && !cli.no_cache {
+        let _ = cache.save(); // Ignore save errors, caching is best-effort
+    }
+
+    // Sort targets alphabetically
+    all_targets.sort_by(|a, b| a.name.cmp(&b.name));
+
+    Ok(all_targets)
+}
+
+/// Get targets for a single file with caching support
+fn get_targets_for_file(
+    makefile: &std::path::Path,
+    parse_options: &ParseOptions,
+    no_cache: bool,
+) -> Result<Vec<target::Target>> {
+    if no_cache {
+        return makefile::parse_makefile(makefile, parse_options);
+    }
+
+    let mut cache = Cache::load().unwrap_or_else(|_| Cache::new());
+
+    if let Some(cached_targets) = cache.get(makefile) {
+        return Ok(cached_targets.clone());
+    }
+
+    let targets = makefile::parse_makefile(makefile, parse_options)?;
+    cache.set(makefile, targets.clone())?;
+    let _ = cache.save();
+
+    Ok(targets)
 }
 
 /// Handle the list command
@@ -189,5 +272,20 @@ mod tests {
 
         // Should return current directory when not specified
         assert!(wd.exists() || wd == PathBuf::from("."));
+    }
+
+    #[test]
+    fn test_no_cache_flag() {
+        let cli = Cli::parse_from(["maki", "--no-cache"]);
+        assert!(cli.no_cache);
+    }
+
+    #[test]
+    fn test_default_command_starts_picker() {
+        let cli = Cli::parse_from(["maki"]);
+        // When command is None and not --json/--no-ui, it should start picker
+        assert!(cli.command.is_none());
+        assert!(!cli.json);
+        assert!(!cli.no_ui);
     }
 }

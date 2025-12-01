@@ -40,6 +40,10 @@ pub struct Cli {
     /// Set the working directory
     #[arg(long = "cwd", global = true)]
     pub cwd: Option<PathBuf>,
+
+    /// Skip the cache and re-parse Makefiles
+    #[arg(long = "no-cache", global = true)]
+    pub no_cache: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -113,6 +117,7 @@ mod tests {
             "--json",
             "--recursive",
             "--dry-run",
+            "--no-cache",
             "list",
         ]);
 
@@ -121,6 +126,7 @@ mod tests {
         assert!(cli.json);
         assert!(cli.recursive);
         assert!(cli.dry_run);
+        assert!(cli.no_cache);
     }
 
     #[test]

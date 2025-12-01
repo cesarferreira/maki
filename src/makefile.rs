@@ -51,6 +51,85 @@ pub fn parse_makefile(path: &Path, options: &ParseOptions) -> Result<Vec<Target>
     parse_makefile_content(&content, path, options)
 }
 
+/// Check if a line is a variable assignment (not a target)
+fn is_variable_assignment(line: &str) -> bool {
+    // Simple variable assignments: VAR := value, VAR ?= value, VAR += value, VAR = value
+    // These have the form: IDENTIFIER op value (where op is :=, ?=, +=, or = without :)
+
+    // Check for simple assignment operators at the start
+    if let Some(pos) = line.find(":=") {
+        // Check if there's no ':' before ':=' (which would indicate a target)
+        let before = &line[..pos];
+        if !before.contains(':') {
+            return true;
+        }
+    }
+
+    if let Some(pos) = line.find("?=") {
+        let before = &line[..pos];
+        if !before.contains(':') {
+            return true;
+        }
+    }
+
+    if let Some(pos) = line.find("+=") {
+        let before = &line[..pos];
+        if !before.contains(':') {
+            return true;
+        }
+    }
+
+    // Check for simple = assignment (VAR = value), but not := or ==
+    if let Some(pos) = line.find('=') {
+        if pos > 0 {
+            let before_char = line.chars().nth(pos - 1);
+            let after_char = line.chars().nth(pos + 1);
+            // Not :=, +=, ?=, or ==
+            if before_char != Some(':') && before_char != Some('+') &&
+               before_char != Some('?') && after_char != Some('=') {
+                let before = &line[..pos];
+                // Simple assignment if no colon before the =
+                if !before.contains(':') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Check if a line is a target-specific variable (target: VAR := value)
+fn is_target_specific_variable(line: &str) -> bool {
+    // Target-specific variables have the form: target: VAR := value
+    // or target: VAR = value
+    // The key is that after the first colon and space, there's a variable assignment
+
+    if let Some(first_colon) = line.find(':') {
+        let after_first_colon = &line[first_colon + 1..];
+        let after_trimmed = after_first_colon.trim_start();
+
+        // Check if what follows looks like a variable assignment
+        // It should be: IDENTIFIER followed by :=, ?=, +=, or = (with space before it)
+        // Find the first space or assignment operator
+        if let Some(space_pos) = after_trimmed.find(|c: char| c.is_whitespace() || c == ':' || c == '?' || c == '+' || c == '=') {
+            let potential_var = &after_trimmed[..space_pos];
+            // Variable names are typically uppercase letters, numbers, underscores
+            if !potential_var.is_empty() &&
+               potential_var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                // Check what operator follows (may have space before it)
+                let rest = after_trimmed[space_pos..].trim_start();
+                if rest.starts_with(":=") || rest.starts_with("?=") ||
+                   rest.starts_with("+=") || rest.starts_with('=') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 /// Parse Makefile content and extract targets
 pub fn parse_makefile_content(content: &str, file: &Path, options: &ParseOptions) -> Result<Vec<Target>> {
     // Regex to match target definitions
@@ -73,15 +152,9 @@ pub fn parse_makefile_content(content: &str, file: &Path, options: &ParseOptions
             continue;
         }
 
-        // Skip variable assignments
-        if trimmed.contains(":=") || trimmed.contains("?=") || trimmed.contains("+=") {
-            // Check if this is a variable assignment, not a target
-            if let Some(colon_pos) = trimmed.find(':') {
-                let after_colon = &trimmed[colon_pos..];
-                if after_colon.starts_with(":=") || after_colon.starts_with("?=") || after_colon.starts_with("+=") {
-                    continue;
-                }
-            }
+        // Skip variable assignments (both simple and target-specific)
+        if is_variable_assignment(trimmed) || is_target_specific_variable(trimmed) {
+            continue;
         }
 
         // Try to match a target
@@ -416,5 +489,53 @@ build:
             build.description,
             Some("This is a longer description that spans multiple lines".to_string())
         );
+    }
+
+    #[test]
+    fn test_skip_target_specific_variables() {
+        let content = r#"
+# Target to print the highest tag version
+print-highest-tag: HIGHEST_TAG:=$(shell git tag | sort -V | tail -1)
+print-highest-tag:
+	@echo $(HIGHEST_TAG)
+
+build: CC := clang
+build:
+	$(CC) main.c
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        // Should find the actual targets, not the variable assignment lines
+        assert_eq!(targets.len(), 2);
+        assert!(targets.iter().any(|t| t.name == "print-highest-tag"));
+        assert!(targets.iter().any(|t| t.name == "build"));
+    }
+
+    #[test]
+    fn test_is_variable_assignment() {
+        assert!(is_variable_assignment("CC := gcc"));
+        assert!(is_variable_assignment("CFLAGS ?= -Wall"));
+        assert!(is_variable_assignment("LDFLAGS += -lm"));
+        assert!(is_variable_assignment("FOO = bar"));
+
+        // These are NOT simple variable assignments
+        assert!(!is_variable_assignment("build:"));
+        assert!(!is_variable_assignment("build: dep1 dep2"));
+        assert!(!is_variable_assignment("target: VAR := value"));
+    }
+
+    #[test]
+    fn test_is_target_specific_variable() {
+        assert!(is_target_specific_variable("print-highest-tag: HIGHEST_TAG:=$(shell git tag)"));
+        assert!(is_target_specific_variable("build: CC := clang"));
+        assert!(is_target_specific_variable("test: CFLAGS += -g"));
+        assert!(is_target_specific_variable("foo: BAR = baz"));
+
+        // These are NOT target-specific variables
+        assert!(!is_target_specific_variable("build:"));
+        assert!(!is_target_specific_variable("build: dep1 dep2"));
+        assert!(!is_target_specific_variable("CC := gcc"));
     }
 }
