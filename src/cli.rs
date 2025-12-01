@@ -70,6 +70,7 @@ impl Cli {
     }
 
     /// Get the Makefile path if explicitly specified
+    #[allow(dead_code)]
     pub fn makefile_path(&self) -> Option<PathBuf> {
         self.file.clone()
     }

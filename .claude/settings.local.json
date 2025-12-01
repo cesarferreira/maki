@@ -7,7 +7,8 @@
       "Bash(cargo run:*)",
       "Bash(./target/debug/maki list:*)",
       "Bash(./target/debug/maki run:*)",
-      "Bash(./target/debug/maki:*)"
+      "Bash(./target/debug/maki:*)",
+      "Bash(./target/release/maki:*)"
     ],
     "deny": [],
     "ask": []

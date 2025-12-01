@@ -87,6 +87,7 @@ fn run_make_command(target: &str, options: &ExecuteOptions) -> Result<ExitStatus
 }
 
 /// Check if make is available on the system
+#[allow(dead_code)]
 pub fn check_make_available() -> bool {
     let result = if cfg!(windows) {
         Command::new("cmd")
@@ -106,6 +107,7 @@ pub fn check_make_available() -> bool {
 }
 
 /// Get the make version string
+#[allow(dead_code)]
 pub fn get_make_version() -> Option<String> {
     let output = if cfg!(windows) {
         Command::new("cmd")
@@ -125,6 +127,7 @@ pub fn get_make_version() -> Option<String> {
 }
 
 /// Execute a target and capture its output (for testing or scripting)
+#[allow(dead_code)]
 pub fn execute_target_capture(
     target: &str,
     cwd: Option<&Path>,

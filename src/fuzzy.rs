@@ -6,6 +6,7 @@ use std::io::Cursor;
 use crate::target::Target;
 
 /// Run the fuzzy finder UI and return the selected target
+#[allow(dead_code)]
 pub fn select_target(targets: &[Target]) -> Result<Option<Target>> {
     if targets.is_empty() {
         return Ok(None);
@@ -20,12 +21,12 @@ pub fn select_target(targets: &[Target]) -> Result<Option<Target>> {
 
     // Configure skim options
     let options = SkimOptionsBuilder::default()
-        .height(Some("50%"))
+        .height("50%".to_string())
         .multi(false)
         .reverse(true)
-        .prompt(Some("Select target > "))
-        .header(Some("Make targets (ESC to cancel)"))
-        .preview(None) // We'll add preview separately if needed
+        .prompt("Select target > ".to_string())
+        .header(Some("Make targets (ESC to cancel)".to_string()))
+        .preview(None)
         .build()
         .unwrap();
 
@@ -34,6 +35,9 @@ pub fn select_target(targets: &[Target]) -> Result<Option<Target>> {
     let items = item_reader.of_bufread(Cursor::new(input_str));
 
     let selected = Skim::run_with(&options, Some(items));
+
+    // Clear the screen after skim exits to remove the TUI
+    print!("\x1B[2J\x1B[H");
 
     match selected {
         Some(output) => {
@@ -83,13 +87,13 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
 
     // Configure skim options with preview
     let options = SkimOptionsBuilder::default()
-        .height(Some("80%"))
+        .height("80%".to_string())
         .multi(false)
         .reverse(true)
-        .prompt(Some("Select target > "))
-        .header(Some("Make targets (ESC to cancel, ↑/↓ navigate, Enter select)"))
-        .preview(preview_cmd.as_deref())
-        .preview_window(Some("right:50%:wrap"))
+        .prompt("Select target > ".to_string())
+        .header(Some("Make targets (ESC to cancel, ↑/↓ navigate, Enter select)".to_string()))
+        .preview(preview_cmd)
+        .preview_window("right:50%:wrap".to_string())
         .build()
         .unwrap();
 
@@ -98,6 +102,9 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
     let items = item_reader.of_bufread(Cursor::new(input_str));
 
     let selected = Skim::run_with(&options, Some(items));
+
+    // Clear the screen after skim exits to remove the TUI
+    print!("\x1B[2J\x1B[H");
 
     match selected {
         Some(output) => {
@@ -143,6 +150,7 @@ fn create_preview_command(targets: &[Target]) -> Option<String> {
 }
 
 /// Get a snippet of the Makefile around a target for display
+#[allow(dead_code)]
 pub fn get_target_snippet(target: &Target, context_lines: usize) -> Result<String> {
     let content = fs::read_to_string(&target.file)?;
     let lines: Vec<&str> = content.lines().collect();

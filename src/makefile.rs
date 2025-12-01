@@ -241,6 +241,7 @@ fn extract_description(lines: &[&str], target_line: usize) -> Option<String> {
 }
 
 /// Parse all Makefiles in a directory
+#[allow(dead_code)]
 pub fn parse_all_makefiles(
     dir: &Path,
     recursive: bool,

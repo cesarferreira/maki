@@ -34,6 +34,7 @@ impl Target {
     }
 
     /// Check if this is a private target (starts with underscore)
+    #[allow(dead_code)]
     pub fn is_private(&self) -> bool {
         self.name.starts_with('_')
     }

@@ -149,6 +149,7 @@ impl Cache {
     }
 
     /// Remove a specific entry from the cache
+    #[allow(dead_code)]
     pub fn invalidate(&mut self, makefile_path: &Path) {
         if let Ok(abs_path) = makefile_path.canonicalize() {
             self.entries.remove(&abs_path.to_string_lossy().to_string());
@@ -156,16 +157,19 @@ impl Cache {
     }
 
     /// Clear the entire cache
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.entries.clear();
     }
 
     /// Remove stale entries (files that no longer exist)
+    #[allow(dead_code)]
     pub fn prune(&mut self) {
         self.entries.retain(|path, _| Path::new(path).exists());
     }
 
     /// Get cache statistics
+    #[allow(dead_code)]
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             entry_count: self.entries.len(),
@@ -176,6 +180,7 @@ impl Cache {
 
 /// Statistics about the cache
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CacheStats {
     pub entry_count: usize,
     pub total_targets: usize,
@@ -189,6 +194,7 @@ pub fn compute_hash(content: &str) -> String {
 }
 
 /// Delete the cache file from disk
+#[allow(dead_code)]
 pub fn clear_cache() -> Result<()> {
     if let Some(cache_path) = Cache::cache_file_path() {
         if cache_path.exists() {
