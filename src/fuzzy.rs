@@ -1,9 +1,102 @@
 use anyhow::Result;
 use skim::prelude::*;
+use std::borrow::Cow;
 use std::fs;
 use std::io::Cursor;
+use std::sync::Arc;
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
 use crate::target::Target;
+
+/// A skim item that holds a target and provides syntax-highlighted preview
+struct TargetItem {
+    target: Target,
+    display: String,
+    syntax_set: Arc<SyntaxSet>,
+    theme_set: Arc<ThemeSet>,
+}
+
+impl TargetItem {
+    fn new(target: Target, syntax_set: Arc<SyntaxSet>, theme_set: Arc<ThemeSet>) -> Self {
+        let display = target.display_name();
+        Self {
+            target,
+            display,
+            syntax_set,
+            theme_set,
+        }
+    }
+
+    fn get_highlighted_preview(&self) -> String {
+        let context_before = 3;
+        let context_after = 10;
+
+        let content = match fs::read_to_string(&self.target.file) {
+            Ok(c) => c,
+            Err(_) => return "Error reading file".to_string(),
+        };
+
+        let lines: Vec<&str> = content.lines().collect();
+        let target_line = self.target.line.saturating_sub(1); // Convert to 0-indexed
+        let start = target_line.saturating_sub(context_before);
+        let end = (target_line + context_after + 1).min(lines.len());
+
+        let snippet = lines[start..end].join("\n");
+
+        // Use Makefile syntax highlighting
+        let syntax = self
+            .syntax_set
+            .find_syntax_by_extension("mk")
+            .or_else(|| self.syntax_set.find_syntax_by_name("Makefile"))
+            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+
+        let theme = &self.theme_set.themes["base16-ocean.dark"];
+        let mut highlighter = HighlightLines::new(syntax, theme);
+
+        let mut result = String::new();
+        for (i, line) in LinesWithEndings::from(&snippet).enumerate() {
+            let line_num = start + i + 1;
+            let marker = if line_num == self.target.line {
+                ">"
+            } else {
+                " "
+            };
+
+            let ranges: Vec<(Style, &str)> = highlighter
+                .highlight_line(line, &self.syntax_set)
+                .unwrap_or_default();
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+
+            result.push_str(&format!("{} {:4} │ {}", marker, line_num, escaped));
+        }
+        result.push_str("\x1b[0m"); // Reset colors
+
+        result
+    }
+}
+
+impl SkimItem for TargetItem {
+    fn text(&self) -> Cow<'_, str> {
+        // Return plain text for matching
+        Cow::Borrowed(&self.target.name)
+    }
+
+    fn display<'a>(&'a self, _context: DisplayContext<'a>) -> AnsiString<'a> {
+        // Return ANSI-formatted string for display
+        AnsiString::parse(&self.display)
+    }
+
+    fn preview(&self, _context: PreviewContext) -> ItemPreview {
+        ItemPreview::AnsiText(self.get_highlighted_preview())
+    }
+
+    fn output(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.target.name)
+    }
+}
 
 /// Run the fuzzy finder UI and return the selected target
 #[allow(dead_code)]
@@ -75,15 +168,21 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
     let target_map: std::collections::HashMap<String, &Target> =
         targets.iter().map(|t| (t.name.clone(), t)).collect();
 
-    // Build the input string for skim
-    let input_str = targets
-        .iter()
-        .map(|t| t.display_name())
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Load syntax highlighting resources (shared across all items)
+    let syntax_set = Arc::new(SyntaxSet::load_defaults_newlines());
+    let theme_set = Arc::new(ThemeSet::load_defaults());
 
-    // Create a temporary file list for preview
-    let preview_cmd = create_preview_command(targets);
+    // Create skim items with syntax highlighting support
+    let items: Vec<Arc<dyn SkimItem>> = targets
+        .iter()
+        .map(|t| {
+            Arc::new(TargetItem::new(
+                t.clone(),
+                Arc::clone(&syntax_set),
+                Arc::clone(&theme_set),
+            )) as Arc<dyn SkimItem>
+        })
+        .collect();
 
     // Configure skim options with preview
     let options = SkimOptionsBuilder::default()
@@ -92,16 +191,19 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
         .reverse(true)
         .prompt("Select target > ".to_string())
         .header(Some("Make targets (ESC to cancel, ↑/↓ navigate, Enter select)".to_string()))
-        .preview(preview_cmd)
-        .preview_window("right:50%:wrap".to_string())
+        .preview(Some("".to_string())) // Enable preview window (content comes from SkimItem)
+        .preview_window("right:60%:wrap".to_string())
         .build()
         .unwrap();
 
-    // Run skim
-    let item_reader = SkimItemReader::default();
-    let items = item_reader.of_bufread(Cursor::new(input_str));
+    // Run skim with our custom items
+    let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
+    for item in items {
+        let _ = tx.send(item);
+    }
+    drop(tx); // Close the sender
 
-    let selected = Skim::run_with(&options, Some(items));
+    let selected = Skim::run_with(&options, Some(rx));
 
     // Clear the screen after skim exits to remove the TUI
     print!("\x1B[2J\x1B[H");
@@ -115,14 +217,9 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
             // Get the selected item
             if let Some(item) = output.selected_items.first() {
                 let selected_text = item.output().to_string();
-                // Extract just the target name (first word before spaces)
-                let target_name = selected_text
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or(&selected_text);
 
                 // Find the matching target
-                let target = target_map.get(target_name).map(|t| (*t).clone());
+                let target = target_map.get(&selected_text).map(|t| (*t).clone());
                 return Ok(target);
             }
         }
@@ -132,22 +229,6 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
     Ok(None)
 }
 
-/// Create a preview command that shows the Makefile context around the target
-fn create_preview_command(targets: &[Target]) -> Option<String> {
-    // For simplicity, if all targets are from the same file, use that file for preview
-    // Otherwise, we need a more complex solution
-    if let Some(first_target) = targets.first() {
-        let file_path = first_target.file.display();
-        // Use bat for syntax highlighting if available, otherwise fall back to sed
-        // The command finds the line number of the target, then displays context around it
-        Some(format!(
-            r#"LINE=$(grep -n '{{}}:' {} | head -1 | cut -d: -f1); if [ -n "$LINE" ]; then START=$((LINE - 3 < 1 ? 1 : LINE - 3)); END=$((LINE + 10)); if command -v bat >/dev/null 2>&1; then bat --style=numbers,grid --color=always --line-range=$START:$END --highlight-line=$LINE -l Makefile {}; else sed -n "${{START}},${{END}}p" {}; fi; fi"#,
-            file_path, file_path, file_path
-        ))
-    } else {
-        None
-    }
-}
 
 /// Get a snippet of the Makefile around a target for display
 #[allow(dead_code)]

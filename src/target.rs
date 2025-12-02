@@ -27,9 +27,10 @@ impl Target {
 
     /// Returns a display string for the fuzzy finder
     pub fn display_name(&self) -> String {
+        // ANSI bold: \x1b[1m, reset: \x1b[0m
         match &self.description {
-            Some(desc) => format!("{:<30} {}", self.name, desc),
-            None => self.name.clone(),
+            Some(desc) => format!("\x1b[1m{:<16}\x1b[0m {}", self.name, desc),
+            None => format!("\x1b[1m{}\x1b[0m", self.name),
         }
     }
 

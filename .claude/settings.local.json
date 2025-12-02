@@ -8,7 +8,8 @@
       "Bash(./target/debug/maki list:*)",
       "Bash(./target/debug/maki run:*)",
       "Bash(./target/debug/maki:*)",
-      "Bash(./target/release/maki:*)"
+      "Bash(./target/release/maki:*)",
+      "Bash(cargo search:*)"
     ],
     "deny": [],
     "ask": []
