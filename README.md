@@ -57,6 +57,9 @@ Simply run `maki` in a directory with a Makefile to start the interactive fuzzy 
 maki
 ```
 
+[![demo](https://asciinema.org/a/NHx7aSLxpWgVnVH1Wg8aQ63fW.svg)](https://asciinema.org/a/NHx7aSLxpWgVnVH1Wg8aQ63fW)
+
+
 Use the arrow keys to navigate, type to filter, and press Enter to run the selected target.
 
 ### Commands
