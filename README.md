@@ -1,3 +1,6 @@
+
+
+
 # maki
 
 A cross-platform fuzzy Makefile task finder and runner.
@@ -5,6 +8,10 @@ A cross-platform fuzzy Makefile task finder and runner.
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![Crates.io](https://img.shields.io/crates/v/maki-cli.svg)](https://crates.io/crates/maki-cli)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+<p align="center">
+  <img src="assets/screenshot.png" alt="maki screenshot" width="800">
+</p>
 
 ## Features
 
