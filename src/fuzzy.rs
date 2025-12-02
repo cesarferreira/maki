@@ -31,9 +31,6 @@ impl TargetItem {
     }
 
     fn get_highlighted_preview(&self) -> String {
-        let context_before = 3;
-        let context_after = 10;
-
         let content = match fs::read_to_string(&self.target.file) {
             Ok(c) => c,
             Err(_) => return "Error reading file".to_string(),
@@ -41,8 +38,28 @@ impl TargetItem {
 
         let lines: Vec<&str> = content.lines().collect();
         let target_line = self.target.line.saturating_sub(1); // Convert to 0-indexed
-        let start = target_line.saturating_sub(context_before);
-        let end = (target_line + context_after + 1).min(lines.len());
+
+        // Find the end of this target's recipe by looking for the next target or end of file
+        let mut end = target_line + 1;
+        while end < lines.len() {
+            let line = lines[end];
+            // A new target starts with a non-whitespace char followed by ':'
+            // Skip empty lines and lines that start with whitespace (recipe lines)
+            if !line.is_empty() && !line.starts_with('\t') && !line.starts_with(' ') {
+                // Check if this looks like a target definition or variable
+                if line.contains(':') && !line.trim().starts_with('#') {
+                    break;
+                }
+            }
+            end += 1;
+        }
+
+        // Trim trailing empty lines from the recipe
+        while end > target_line + 1 && lines[end - 1].trim().is_empty() {
+            end -= 1;
+        }
+
+        let start = target_line;
 
         let snippet = lines[start..end].join("\n");
 
@@ -194,7 +211,7 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
             "Make targets (ESC to cancel, ↑/↓ navigate, Enter select)".to_string(),
         ))
         .preview(Some("".to_string())) // Enable preview window (content comes from SkimItem)
-        .preview_window("right:60%:wrap".to_string())
+        .preview_window("right:70%:wrap".to_string())
         .build()
         .unwrap();
 
