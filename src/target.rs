@@ -27,10 +27,7 @@ impl Target {
 
     /// Returns a display string for the fuzzy finder
     pub fn display_name(&self) -> String {
-        match &self.description {
-            Some(desc) => format!("{:<16} {}", self.name, desc),
-            None => self.name.clone(),
-        }
+        self.name.clone()
     }
 
     /// Check if this is a private target (starts with underscore)
@@ -87,9 +84,8 @@ mod tests {
             5,
         );
 
-        let display = target.display_name();
-        assert!(display.contains("test"));
-        assert!(display.contains("Run tests"));
+        // display_name now only shows the name, description is shown in preview
+        assert_eq!(target.display_name(), "test");
     }
 
     #[test]

@@ -43,11 +43,14 @@ impl TargetItem {
         let mut end = target_line + 1;
         while end < lines.len() {
             let line = lines[end];
-            // A new target starts with a non-whitespace char followed by ':'
             // Skip empty lines and lines that start with whitespace (recipe lines)
             if !line.is_empty() && !line.starts_with('\t') && !line.starts_with(' ') {
-                // Check if this looks like a target definition or variable
-                if line.contains(':') && !line.trim().starts_with('#') {
+                // Stop at non-indented comments (these are descriptions for the next target)
+                if line.trim().starts_with('#') {
+                    break;
+                }
+                // Stop at a new target definition (line with ':')
+                if line.contains(':') {
                     break;
                 }
             }
@@ -74,6 +77,12 @@ impl TargetItem {
         let mut highlighter = HighlightLines::new(syntax, theme);
 
         let mut result = String::new();
+
+        // Add description at the top if present (in cyan color)
+        if let Some(ref description) = self.target.description {
+            result.push_str(&format!("\x1b[36m{}\x1b[0m\n\n", description));
+        }
+
         for (i, line) in LinesWithEndings::from(&snippet).enumerate() {
             let line_num = start + i + 1;
             let marker = if line_num == self.target.line {
@@ -315,11 +324,8 @@ mod tests {
         let target_without_desc =
             Target::new("clean".to_string(), None, PathBuf::from("Makefile"), 5);
 
-        let display1 = target_with_desc.display_name();
-        let display2 = target_without_desc.display_name();
-
-        assert!(display1.contains("build"));
-        assert!(display1.contains("Build the project"));
-        assert_eq!(display2, "clean");
+        // display_name now only shows the name, description is shown in preview pane
+        assert_eq!(target_with_desc.display_name(), "build");
+        assert_eq!(target_without_desc.display_name(), "clean");
     }
 }
