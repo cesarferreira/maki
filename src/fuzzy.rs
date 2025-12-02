@@ -7,7 +7,7 @@ use std::sync::Arc;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Style, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use syntect::util::{LinesWithEndings, as_24_bit_terminal_escaped};
 
 use crate::target::Target;
 
@@ -190,7 +190,9 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
         .multi(false)
         .reverse(true)
         .prompt("Select target > ".to_string())
-        .header(Some("Make targets (ESC to cancel, ↑/↓ navigate, Enter select)".to_string()))
+        .header(Some(
+            "Make targets (ESC to cancel, ↑/↓ navigate, Enter select)".to_string(),
+        ))
         .preview(Some("".to_string())) // Enable preview window (content comes from SkimItem)
         .preview_window("right:60%:wrap".to_string())
         .build()
@@ -228,7 +230,6 @@ pub fn select_target_with_preview(targets: &[Target]) -> Result<Option<Target>> 
 
     Ok(None)
 }
-
 
 /// Get a snippet of the Makefile around a target for display
 #[allow(dead_code)]
@@ -278,12 +279,7 @@ mod tests {
         writeln!(file, "test:").unwrap();
         writeln!(file, "\techo testing").unwrap();
 
-        let target = Target::new(
-            "build".to_string(),
-            None,
-            file.path().to_path_buf(),
-            2,
-        );
+        let target = Target::new("build".to_string(), None, file.path().to_path_buf(), 2);
 
         let snippet = get_target_snippet(&target, 2).unwrap();
         assert!(snippet.contains("build:"));
@@ -299,12 +295,8 @@ mod tests {
             1,
         );
 
-        let target_without_desc = Target::new(
-            "clean".to_string(),
-            None,
-            PathBuf::from("Makefile"),
-            5,
-        );
+        let target_without_desc =
+            Target::new("clean".to_string(), None, PathBuf::from("Makefile"), 5);
 
         let display1 = target_with_desc.display_name();
         let display2 = target_without_desc.display_name();

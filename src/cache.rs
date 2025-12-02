@@ -52,8 +52,7 @@ impl Cache {
 
     /// Load the cache from disk
     pub fn load() -> Result<Self> {
-        let cache_path = Self::cache_file_path()
-            .context("Could not determine cache directory")?;
+        let cache_path = Self::cache_file_path().context("Could not determine cache directory")?;
 
         if !cache_path.exists() {
             return Ok(Self::new());
@@ -62,8 +61,8 @@ impl Cache {
         let content = fs::read_to_string(&cache_path)
             .with_context(|| format!("Failed to read cache file: {}", cache_path.display()))?;
 
-        let cache: Self = serde_json::from_str(&content)
-            .with_context(|| "Failed to parse cache file")?;
+        let cache: Self =
+            serde_json::from_str(&content).with_context(|| "Failed to parse cache file")?;
 
         // Check version compatibility
         if cache.version != Self::CURRENT_VERSION {
@@ -76,18 +75,17 @@ impl Cache {
 
     /// Save the cache to disk
     pub fn save(&self) -> Result<()> {
-        let cache_dir = Self::cache_dir()
-            .context("Could not determine cache directory")?;
+        let cache_dir = Self::cache_dir().context("Could not determine cache directory")?;
 
         // Create cache directory if it doesn't exist
         if !cache_dir.exists() {
-            fs::create_dir_all(&cache_dir)
-                .with_context(|| format!("Failed to create cache directory: {}", cache_dir.display()))?;
+            fs::create_dir_all(&cache_dir).with_context(|| {
+                format!("Failed to create cache directory: {}", cache_dir.display())
+            })?;
         }
 
         let cache_path = cache_dir.join(Self::CACHE_FILENAME);
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize cache")?;
+        let content = serde_json::to_string_pretty(self).context("Failed to serialize cache")?;
 
         fs::write(&cache_path, content)
             .with_context(|| format!("Failed to write cache file: {}", cache_path.display()))?;
@@ -123,8 +121,12 @@ impl Cache {
 
     /// Store targets in the cache for a Makefile
     pub fn set(&mut self, makefile_path: &Path, targets: Vec<Target>) -> Result<()> {
-        let abs_path = makefile_path.canonicalize()
-            .with_context(|| format!("Failed to get absolute path for: {}", makefile_path.display()))?;
+        let abs_path = makefile_path.canonicalize().with_context(|| {
+            format!(
+                "Failed to get absolute path for: {}",
+                makefile_path.display()
+            )
+        })?;
 
         let content = fs::read_to_string(makefile_path)
             .with_context(|| format!("Failed to read Makefile: {}", makefile_path.display()))?;
@@ -144,7 +146,8 @@ impl Cache {
             targets,
         };
 
-        self.entries.insert(abs_path.to_string_lossy().to_string(), entry);
+        self.entries
+            .insert(abs_path.to_string_lossy().to_string(), entry);
         Ok(())
     }
 
@@ -198,8 +201,9 @@ pub fn compute_hash(content: &str) -> String {
 pub fn clear_cache() -> Result<()> {
     if let Some(cache_path) = Cache::cache_file_path() {
         if cache_path.exists() {
-            fs::remove_file(&cache_path)
-                .with_context(|| format!("Failed to delete cache file: {}", cache_path.display()))?;
+            fs::remove_file(&cache_path).with_context(|| {
+                format!("Failed to delete cache file: {}", cache_path.display())
+            })?;
         }
     }
     Ok(())

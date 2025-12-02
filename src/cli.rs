@@ -64,9 +64,9 @@ pub enum Commands {
 impl Cli {
     /// Get the working directory, defaulting to current directory
     pub fn working_dir(&self) -> PathBuf {
-        self.cwd.clone().unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        })
+        self.cwd
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
     /// Get the Makefile path if explicitly specified

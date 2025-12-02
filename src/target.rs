@@ -27,10 +27,9 @@ impl Target {
 
     /// Returns a display string for the fuzzy finder
     pub fn display_name(&self) -> String {
-        // ANSI bold: \x1b[1m, reset: \x1b[0m
         match &self.description {
-            Some(desc) => format!("\x1b[1m{:<16}\x1b[0m {}", self.name, desc),
-            None => format!("\x1b[1m{}\x1b[0m", self.name),
+            Some(desc) => format!("{:<16} {}", self.name, desc),
+            None => self.name.clone(),
         }
     }
 
@@ -71,18 +70,9 @@ mod tests {
 
     #[test]
     fn test_is_private() {
-        let private_target = Target::new(
-            "_internal".to_string(),
-            None,
-            PathBuf::from("Makefile"),
-            1,
-        );
-        let public_target = Target::new(
-            "build".to_string(),
-            None,
-            PathBuf::from("Makefile"),
-            1,
-        );
+        let private_target =
+            Target::new("_internal".to_string(), None, PathBuf::from("Makefile"), 1);
+        let public_target = Target::new("build".to_string(), None, PathBuf::from("Makefile"), 1);
 
         assert!(private_target.is_private());
         assert!(!public_target.is_private());
@@ -104,12 +94,7 @@ mod tests {
 
     #[test]
     fn test_display_name_without_description() {
-        let target = Target::new(
-            "clean".to_string(),
-            None,
-            PathBuf::from("Makefile"),
-            3,
-        );
+        let target = Target::new("clean".to_string(), None, PathBuf::from("Makefile"), 3);
 
         assert_eq!(target.display_name(), "clean");
     }

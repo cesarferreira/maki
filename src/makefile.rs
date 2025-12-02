@@ -85,8 +85,11 @@ fn is_variable_assignment(line: &str) -> bool {
             let before_char = line.chars().nth(pos - 1);
             let after_char = line.chars().nth(pos + 1);
             // Not :=, +=, ?=, or ==
-            if before_char != Some(':') && before_char != Some('+') &&
-               before_char != Some('?') && after_char != Some('=') {
+            if before_char != Some(':')
+                && before_char != Some('+')
+                && before_char != Some('?')
+                && after_char != Some('=')
+            {
                 let before = &line[..pos];
                 // Simple assignment if no colon before the =
                 if !before.contains(':') {
@@ -112,15 +115,23 @@ fn is_target_specific_variable(line: &str) -> bool {
         // Check if what follows looks like a variable assignment
         // It should be: IDENTIFIER followed by :=, ?=, +=, or = (with space before it)
         // Find the first space or assignment operator
-        if let Some(space_pos) = after_trimmed.find(|c: char| c.is_whitespace() || c == ':' || c == '?' || c == '+' || c == '=') {
+        if let Some(space_pos) = after_trimmed
+            .find(|c: char| c.is_whitespace() || c == ':' || c == '?' || c == '+' || c == '=')
+        {
             let potential_var = &after_trimmed[..space_pos];
             // Variable names are typically uppercase letters, numbers, underscores
-            if !potential_var.is_empty() &&
-               potential_var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if !potential_var.is_empty()
+                && potential_var
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 // Check what operator follows (may have space before it)
                 let rest = after_trimmed[space_pos..].trim_start();
-                if rest.starts_with(":=") || rest.starts_with("?=") ||
-                   rest.starts_with("+=") || rest.starts_with('=') {
+                if rest.starts_with(":=")
+                    || rest.starts_with("?=")
+                    || rest.starts_with("+=")
+                    || rest.starts_with('=')
+                {
                     return true;
                 }
             }
@@ -131,7 +142,11 @@ fn is_target_specific_variable(line: &str) -> bool {
 }
 
 /// Parse Makefile content and extract targets
-pub fn parse_makefile_content(content: &str, file: &Path, options: &ParseOptions) -> Result<Vec<Target>> {
+pub fn parse_makefile_content(
+    content: &str,
+    file: &Path,
+    options: &ParseOptions,
+) -> Result<Vec<Target>> {
     // Regex to match target definitions
     // Matches: target_name: [dependencies]
     // Includes % for pattern rules like %.o: %.c
@@ -529,7 +544,9 @@ build:
 
     #[test]
     fn test_is_target_specific_variable() {
-        assert!(is_target_specific_variable("print-highest-tag: HIGHEST_TAG:=$(shell git tag)"));
+        assert!(is_target_specific_variable(
+            "print-highest-tag: HIGHEST_TAG:=$(shell git tag)"
+        ));
         assert!(is_target_specific_variable("build: CC := clang"));
         assert!(is_target_specific_variable("test: CFLAGS += -g"));
         assert!(is_target_specific_variable("foo: BAR = baz"));

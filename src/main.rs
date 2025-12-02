@@ -27,7 +27,10 @@ fn run() -> Result<()> {
     // Set up working directory
     let working_dir = cli.working_dir();
     if !working_dir.exists() {
-        anyhow::bail!("Working directory does not exist: {}", working_dir.display());
+        anyhow::bail!(
+            "Working directory does not exist: {}",
+            working_dir.display()
+        );
     }
 
     // Parse options
@@ -159,8 +162,8 @@ fn get_targets_for_file(
 /// Handle the list command
 fn handle_list(targets: &[target::Target], json_output: bool) -> Result<()> {
     if json_output {
-        let json = serde_json::to_string_pretty(targets)
-            .context("Failed to serialize targets to JSON")?;
+        let json =
+            serde_json::to_string_pretty(targets).context("Failed to serialize targets to JSON")?;
         println!("{}", json);
     } else {
         let max_name_len = targets.iter().map(|t| t.name.len()).max().unwrap_or(20);
@@ -214,11 +217,7 @@ fn handle_pick(targets: &[target::Target], cli: &Cli) -> Result<()> {
                     std::process::exit(status.code().unwrap_or(1));
                 }
             } else {
-                println!(
-                    "{} make {}",
-                    "Would run:".yellow(),
-                    target.name
-                );
+                println!("{} make {}", "Would run:".yellow(), target.name);
             }
         }
         None => {
