@@ -14,6 +14,8 @@ pub struct ExecuteOptions {
     pub cwd: Option<std::path::PathBuf>,
     /// Custom Makefile to use
     pub makefile: Option<std::path::PathBuf>,
+    /// Variables to pass to make (e.g., [("V", "patch"), ("ENV", "prod")])
+    pub variables: Vec<(String, String)>,
 }
 
 /// Execute a make target
@@ -43,6 +45,12 @@ fn build_command(target: &str, options: &ExecuteOptions) -> Vec<String> {
     }
 
     args.push(target.to_string());
+
+    // Add variables (e.g., V=patch, ENV=prod)
+    for (name, value) in &options.variables {
+        args.push(format!("{}={}", name, value));
+    }
+
     args
 }
 
@@ -68,6 +76,11 @@ fn run_make_command(target: &str, options: &ExecuteOptions) -> Result<ExitStatus
 
     // Add the target
     cmd.arg(target);
+
+    // Add variables (e.g., V=patch, ENV=prod)
+    for (name, value) in &options.variables {
+        cmd.arg(format!("{}={}", name, value));
+    }
 
     // Set working directory if specified
     if let Some(ref cwd) = options.cwd {
@@ -189,6 +202,47 @@ mod tests {
         let cmd = build_command("test", &options);
 
         assert_eq!(cmd, vec!["make", "-f", "custom.mk", "test"]);
+    }
+
+    #[test]
+    fn test_build_command_with_variables() {
+        let options = ExecuteOptions {
+            variables: vec![
+                ("V".to_string(), "patch".to_string()),
+            ],
+            ..Default::default()
+        };
+        let cmd = build_command("bump", &options);
+
+        assert_eq!(cmd, vec!["make", "bump", "V=patch"]);
+    }
+
+    #[test]
+    fn test_build_command_with_multiple_variables() {
+        let options = ExecuteOptions {
+            variables: vec![
+                ("V".to_string(), "major".to_string()),
+                ("ENV".to_string(), "prod".to_string()),
+            ],
+            ..Default::default()
+        };
+        let cmd = build_command("deploy", &options);
+
+        assert_eq!(cmd, vec!["make", "deploy", "V=major", "ENV=prod"]);
+    }
+
+    #[test]
+    fn test_build_command_with_makefile_and_variables() {
+        let options = ExecuteOptions {
+            makefile: Some(std::path::PathBuf::from("custom.mk")),
+            variables: vec![
+                ("MODE".to_string(), "release".to_string()),
+            ],
+            ..Default::default()
+        };
+        let cmd = build_command("build", &options);
+
+        assert_eq!(cmd, vec!["make", "-f", "custom.mk", "build", "MODE=release"]);
     }
 
     #[test]

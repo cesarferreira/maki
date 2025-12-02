@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::target::Target;
+use crate::target::{RequiredVar, Target};
 
 /// Options for parsing Makefiles
 #[derive(Debug, Clone, Default)]
@@ -194,12 +194,16 @@ pub fn parse_makefile_content(
             // Extract description from comments
             let description = extract_description(&lines, line_num);
 
+            // Extract required variables from comments
+            let required_vars = extract_required_vars(&lines, line_num);
+
             seen_names.insert(target_name.clone());
-            targets.push(Target::new(
+            targets.push(Target::with_required_vars(
                 target_name,
                 description,
                 file.to_path_buf(),
                 line_num + 1, // 1-indexed line numbers
+                required_vars,
             ));
         }
     }
@@ -253,6 +257,109 @@ fn extract_description(lines: &[&str], target_line: usize) -> Option<String> {
         comments.reverse();
         Some(comments.join(" "))
     }
+}
+
+/// Extract required variables from comments and recipe
+/// Looks for patterns like: "usage: make target VAR=value|value2" in comments
+/// and $(VAR) or ${VAR} in the recipe
+fn extract_required_vars(lines: &[&str], target_line: usize) -> Vec<RequiredVar> {
+    let mut vars = Vec::new();
+    let mut var_hints: std::collections::HashMap<String, Option<String>> =
+        std::collections::HashMap::new();
+
+    // Regex to match VAR=hint patterns in comments (e.g., V=patch|minor|major)
+    let hint_regex = Regex::new(r"\b([A-Z][A-Z0-9_]*)=([^\s,\)]+)").unwrap();
+
+    // Regex to match $(VAR) or ${VAR} in recipe lines
+    let recipe_var_regex = Regex::new(r"\$[\(\{]([A-Z][A-Z0-9_]*)[\)\}]").unwrap();
+
+    // Built-in make variables to ignore
+    let builtin_vars: std::collections::HashSet<&str> = [
+        "CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "LDLIBS", "AR", "AS",
+        "CPP", "FC", "M2C", "PC", "CO", "GET", "LEX", "YACC", "LINT",
+        "MAKEFLAGS", "MAKECMDGOALS", "CURDIR", "SHELL", "MAKE", "MAKELEVEL",
+        "@", "<", "^", "?", "*", "%", "+", "|",
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    // Collect all comment text for this target
+    let mut comment_text = String::new();
+
+    // Check inline comment on the target line
+    let target = lines[target_line];
+    if let Some(pos) = target.find("##") {
+        comment_text.push_str(&target[pos + 2..]);
+        comment_text.push(' ');
+    }
+
+    // Check preceding comment lines
+    let mut i = target_line;
+    while i > 0 {
+        i -= 1;
+        let prev_line = lines[i].trim();
+
+        if prev_line.starts_with('#') {
+            let comment = prev_line.trim_start_matches('#').trim();
+            comment_text.push_str(comment);
+            comment_text.push(' ');
+        } else if prev_line.is_empty() {
+            if i > 0 && lines[i - 1].trim().starts_with('#') {
+                continue;
+            }
+            break;
+        } else {
+            break;
+        }
+    }
+
+    // Find all variable hints in comments (VAR=value|value2)
+    for cap in hint_regex.captures_iter(&comment_text) {
+        let name = cap.get(1).unwrap().as_str().to_string();
+        let hint = cap.get(2).map(|m| m.as_str().to_string());
+        var_hints.insert(name, hint);
+    }
+
+    // Scan recipe lines for $(VAR) or ${VAR} patterns
+    let mut j = target_line + 1;
+    while j < lines.len() {
+        let line = lines[j];
+        // Recipe lines start with tab or spaces
+        if !line.starts_with('\t') && !line.starts_with(' ') {
+            // Stop at non-recipe line (next target or empty non-continuation)
+            if !line.is_empty() {
+                break;
+            }
+        }
+
+        // Find all variable references in this recipe line
+        for cap in recipe_var_regex.captures_iter(line) {
+            let name = cap.get(1).unwrap().as_str().to_string();
+
+            // Skip built-in variables
+            if builtin_vars.contains(name.as_str()) {
+                continue;
+            }
+
+            // Add variable if not already tracked
+            if !var_hints.contains_key(&name) {
+                var_hints.insert(name, None);
+            }
+        }
+
+        j += 1;
+    }
+
+    // Convert to RequiredVar vec
+    for (name, hint) in var_hints {
+        vars.push(RequiredVar { name, hint });
+    }
+
+    // Sort for consistent ordering
+    vars.sort_by(|a, b| a.name.cmp(&b.name));
+
+    vars
 }
 
 /// Parse all Makefiles in a directory
@@ -555,5 +662,141 @@ build:
         assert!(!is_target_specific_variable("build:"));
         assert!(!is_target_specific_variable("build: dep1 dep2"));
         assert!(!is_target_specific_variable("CC := gcc"));
+    }
+
+    #[test]
+    fn test_extract_required_vars_from_usage_comment() {
+        let content = r#"
+# Bump version (usage: make bump V=patch|minor|major)
+bump:
+	cargo set-version --bump $(V)
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let bump = targets.iter().find(|t| t.name == "bump").unwrap();
+        assert_eq!(bump.required_vars.len(), 1);
+        assert_eq!(bump.required_vars[0].name, "V");
+        assert_eq!(bump.required_vars[0].hint, Some("patch|minor|major".to_string()));
+    }
+
+    #[test]
+    fn test_extract_multiple_required_vars() {
+        let content = r#"
+# Run with args (usage: make run-args ARGS="list" ENV=dev|prod)
+run-args:
+	cargo run -- $(ARGS)
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let run_args = targets.iter().find(|t| t.name == "run-args").unwrap();
+        assert_eq!(run_args.required_vars.len(), 2);
+        assert!(run_args.required_vars.iter().any(|v| v.name == "ARGS"));
+        assert!(run_args.required_vars.iter().any(|v| v.name == "ENV"));
+    }
+
+    #[test]
+    fn test_extract_required_vars_inline_comment() {
+        let content = r#"
+build: ## Build with MODE=debug|release
+	cargo build --$(MODE)
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let build = targets.iter().find(|t| t.name == "build").unwrap();
+        assert_eq!(build.required_vars.len(), 1);
+        assert_eq!(build.required_vars[0].name, "MODE");
+        assert_eq!(build.required_vars[0].hint, Some("debug|release".to_string()));
+    }
+
+    #[test]
+    fn test_no_required_vars() {
+        let content = r#"
+# Build the project
+build:
+	cargo build
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let build = targets.iter().find(|t| t.name == "build").unwrap();
+        assert!(build.required_vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_vars_from_recipe_without_hint() {
+        let content = r#"
+# Test target
+mood2:
+	@echo "I'm feeling $(FEELING) today!"
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let mood2 = targets.iter().find(|t| t.name == "mood2").unwrap();
+        assert_eq!(mood2.required_vars.len(), 1);
+        assert_eq!(mood2.required_vars[0].name, "FEELING");
+        assert_eq!(mood2.required_vars[0].hint, None); // No hint from comment
+    }
+
+    #[test]
+    fn test_extract_vars_from_recipe_with_braces() {
+        let content = r#"
+greet:
+	@echo "Hello, ${NAME}!"
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let greet = targets.iter().find(|t| t.name == "greet").unwrap();
+        assert_eq!(greet.required_vars.len(), 1);
+        assert_eq!(greet.required_vars[0].name, "NAME");
+    }
+
+    #[test]
+    fn test_skip_builtin_vars() {
+        let content = r#"
+compile:
+	$(CC) $(CFLAGS) -o $@ $< $(MYVAR)
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let compile = targets.iter().find(|t| t.name == "compile").unwrap();
+        // Should only have MYVAR, not CC, CFLAGS, @, or <
+        assert_eq!(compile.required_vars.len(), 1);
+        assert_eq!(compile.required_vars[0].name, "MYVAR");
+    }
+
+    #[test]
+    fn test_recipe_vars_merged_with_comment_hints() {
+        let content = r#"
+# Deploy (usage: make deploy ENV=dev|staging|prod)
+deploy:
+	@echo "Deploying to $(ENV) with version $(VERSION)"
+"#;
+
+        let options = ParseOptions::default();
+        let targets = parse_makefile_content(content, Path::new("Makefile"), &options).unwrap();
+
+        let deploy = targets.iter().find(|t| t.name == "deploy").unwrap();
+        assert_eq!(deploy.required_vars.len(), 2);
+
+        // ENV should have hint from comment
+        let env_var = deploy.required_vars.iter().find(|v| v.name == "ENV").unwrap();
+        assert_eq!(env_var.hint, Some("dev|staging|prod".to_string()));
+
+        // VERSION should have no hint (only found in recipe)
+        let version_var = deploy.required_vars.iter().find(|v| v.name == "VERSION").unwrap();
+        assert_eq!(version_var.hint, None);
     }
 }

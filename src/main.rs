@@ -3,6 +3,7 @@ mod cli;
 mod executor;
 mod fuzzy;
 mod makefile;
+mod prompt;
 mod target;
 
 use anyhow::{Context, Result};
@@ -56,7 +57,7 @@ fn run() -> Result<()> {
             handle_pick(&targets, &cli)?;
         }
         Some(Commands::Run { ref target }) => {
-            handle_run(target, &cli)?;
+            handle_run(target, &targets, &cli)?;
         }
         None => {
             // Default behavior: start interactive picker (unless --json or --no-ui)
@@ -203,12 +204,20 @@ fn handle_pick(targets: &[target::Target], cli: &Cli) -> Result<()> {
         Some(target) => {
             println!("{} {}", "Selected:".green(), target.name.bold());
 
+            // Prompt for required variables if any
+            let variables = if target.has_required_vars() {
+                prompt::prompt_for_variables(&target.required_vars)?
+            } else {
+                Vec::new()
+            };
+
             if !cli.dry_run {
                 let exec_options = ExecuteOptions {
                     dry_run: cli.dry_run,
                     print_cmd: true,
                     cwd: Some(cli.working_dir()),
                     makefile: cli.file.clone(),
+                    variables,
                 };
 
                 let status = executor::execute_target(&target.name, &exec_options)?;
@@ -217,7 +226,19 @@ fn handle_pick(targets: &[target::Target], cli: &Cli) -> Result<()> {
                     std::process::exit(status.code().unwrap_or(1));
                 }
             } else {
-                println!("{} make {}", "Would run:".yellow(), target.name);
+                let vars_str = if !variables.is_empty() {
+                    format!(
+                        " {}",
+                        variables
+                            .iter()
+                            .map(|(k, v)| format!("{}={}", k, v))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                } else {
+                    String::new()
+                };
+                println!("{} make {}{}", "Would run:".yellow(), target.name, vars_str);
             }
         }
         None => {
@@ -229,12 +250,27 @@ fn handle_pick(targets: &[target::Target], cli: &Cli) -> Result<()> {
 }
 
 /// Handle the run command
-fn handle_run(target_name: &str, cli: &Cli) -> Result<()> {
+fn handle_run(target_name: &str, targets: &[target::Target], cli: &Cli) -> Result<()> {
+    // Find the target to check for required variables
+    let target = targets.iter().find(|t| t.name == target_name);
+
+    // Prompt for required variables if any
+    let variables = if let Some(t) = target {
+        if t.has_required_vars() {
+            prompt::prompt_for_variables(&t.required_vars)?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
     let exec_options = ExecuteOptions {
         dry_run: cli.dry_run,
         print_cmd: true,
         cwd: Some(cli.working_dir()),
         makefile: cli.file.clone(),
+        variables,
     };
 
     let status = executor::execute_target(target_name, &exec_options)?;

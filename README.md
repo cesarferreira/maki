@@ -3,11 +3,14 @@
 A cross-platform fuzzy Makefile task finder and runner.
 
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
+[![Crates.io](https://img.shields.io/crates/v/maki-cli.svg)](https://crates.io/crates/maki-cli)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## Features
 
 - **Fuzzy search** - Quickly find and run Makefile targets using an interactive fuzzy finder
+- **Syntax-highlighted preview** - See target contents with syntax highlighting before running
+- **Variable prompting** - Automatically detects required variables and prompts for values
 - **Cross-platform** - Works on Linux, macOS, and Windows
 - **Smart caching** - Caches parsed Makefiles using SHA256 checksums for instant subsequent lookups
 - **Comment extraction** - Automatically extracts target descriptions from comments
@@ -15,6 +18,12 @@ A cross-platform fuzzy Makefile task finder and runner.
 - **Recursive scanning** - Find Makefiles in subdirectories
 
 ## Installation
+
+### From crates.io
+
+```bash
+cargo install maki-cli
+```
 
 ### From source
 
@@ -95,6 +104,61 @@ maki -r list
 maki --no-cache list
 ```
 
+## Variable Prompting
+
+Maki automatically detects when a target requires variables and prompts you to enter them.
+
+### How It Works
+
+1. **From comments** - Define hints in your target's comment using `VAR=value|value2|value3`:
+
+   ```makefile
+   # Bump version (usage: make bump V=patch|minor|major)
+   bump:
+   	cargo set-version --bump $(V)
+   ```
+
+   When you select this target, maki shows a **fuzzy-select menu** with the options: `patch`, `minor`, `major`.
+
+2. **From recipe** - Maki also scans recipe lines for `$(VAR)` or `${VAR}` patterns:
+
+   ```makefile
+   # Deploy the application
+   deploy:
+   	./deploy.sh --env $(ENV) --version $(VERSION)
+   ```
+
+   When you select this target, maki prompts you to enter values for `ENV` and `VERSION`.
+
+3. **Combined** - You can mix both approaches:
+
+   ```makefile
+   # Deploy (usage: make deploy ENV=dev|staging|prod)
+   deploy:
+   	./deploy.sh --env $(ENV) --version $(VERSION)
+   ```
+
+   This gives you a **fuzzy-select** for `ENV` (with options) and a **text prompt** for `VERSION`.
+
+### Example Workflow
+
+```
+$ maki
+> bump
+
+Selected: bump
+? Select value for V:
+  patch
+> minor
+  major
+
+Running: make bump V=minor
+```
+
+### Built-in Variables
+
+Maki automatically ignores common Make built-in variables like `CC`, `CFLAGS`, `LDFLAGS`, `$@`, `$<`, `$^`, etc.
+
 ## Caching
 
 Maki caches parsed Makefiles to improve performance. The cache:
@@ -153,7 +217,20 @@ The `--json` flag outputs targets in this format:
     "name": "build",
     "description": "Build the project",
     "file": "/path/to/Makefile",
-    "line": 42
+    "line": 42,
+    "required_vars": []
+  },
+  {
+    "name": "bump",
+    "description": "Bump version (usage: make bump V=patch|minor|major)",
+    "file": "/path/to/Makefile",
+    "line": 63,
+    "required_vars": [
+      {
+        "name": "V",
+        "hint": "patch|minor|major"
+      }
+    ]
   }
 ]
 ```
@@ -188,6 +265,7 @@ src/
 ├── makefile.rs   # Makefile parsing logic
 ├── fuzzy.rs      # Fuzzy finder UI (skim)
 ├── executor.rs   # Task execution
+├── prompt.rs     # Variable prompting (dialoguer)
 └── cache.rs      # SHA-based caching
 ```
 
@@ -203,3 +281,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [skim](https://github.com/lotabout/skim) - Fuzzy finder library
 - [clap](https://github.com/clap-rs/clap) - Command line argument parser
+- [dialoguer](https://github.com/console-rs/dialoguer) - Interactive prompts
+- [syntect](https://github.com/trishume/syntect) - Syntax highlighting

@@ -63,6 +63,19 @@ watch:
 bump:
 	cargo set-version --bump $(V)
 
+# Test variable prompt (usage: make greet NAME=world)
+greet:
+	@echo "Hello, $(NAME)!"
+
+# Test with options (usage: make mood FEELING=happy|sad|excited)
+mood:
+	@echo "I'm feeling $(FEELING) today!"
+
+# Names
+name:
+	@echo "My name is $(NAME)!"
+
+
 # Publish to crates.io
 publish: check
 	cargo publish
